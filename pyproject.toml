@@ -1,0 +1,41 @@
+[project]
+name = "hindsight-shared-memory"
+version = "0.1.0"
+description = "One local Hindsight memory server shared by all your agents (Claude Code & any MCP client). No API key."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    # 0.x minor releases may break; Dependabot proposes bumps and CI verifies them.
+    "hindsight-api-slim[embedded-db,local-onnx]>=0.10.1,<0.11",
+    "flashrank>=0.2",
+]
+keywords = ["mcp", "hindsight", "claude-code", "agent-memory", "multi-agent", "local"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+]
+
+[project.urls]
+Repository = "https://github.com/ShmuelOps/hindsight-shared-memory"
+
+[project.scripts]
+hindsight-shared-memory = "hindsight_shared_memory.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6", "mcp>=2.2,<3"]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
