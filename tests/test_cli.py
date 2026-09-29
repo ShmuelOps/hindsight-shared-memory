@@ -130,3 +130,23 @@ def test_offline_setting_reaches_huggingface_hub(tmp_path):
     env = {**os.environ, **_fake_hf_cache(tmp_path)}
     env.pop("HF_HUB_OFFLINE", None)
     subprocess.run([sys.executable, "-c", code], env=env, check=True)
+
+
+def test_reinstall_waits_for_launchd_to_drop_the_old_job(tmp_path, monkeypatch):
+    # Regression: re-running install-service (the update path) bootstrapped while the old job
+    # was still shutting down, and launchctl failed with "Bootstrap failed: 5".
+    plist = tmp_path / "svc.plist"
+    plist.write_text("old")
+    loaded = iter([True, True, False])
+    calls = []
+    monkeypatch.setattr(cli.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(cli, "plist_path", lambda name: plist)
+    monkeypatch.setattr(cli, "log_path", lambda name: tmp_path / "svc.log")
+    monkeypatch.setattr(cli, "_launchd_loaded", lambda name: next(loaded))
+    monkeypatch.setattr(cli.time, "sleep", lambda s: calls.append(("sleep",)))
+    monkeypatch.setattr(cli, "_run", lambda *cmd, check=True: calls.append(cmd[:2]))
+
+    cli.install(cli.SERVER, ["/bin/true"])
+
+    assert calls == [("launchctl", "bootout"), ("sleep",), ("sleep",), ("launchctl", "bootstrap")]
+    assert plistlib.loads(plist.read_bytes())["ProgramArguments"] == ["/bin/true"]
