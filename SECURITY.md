@@ -11,7 +11,9 @@ Please **do not** open a public issue. Report privately via
   project binds them to `127.0.0.1`, and CI checks that the server can't be reached on a non-loopback address.
   Any local process can still read and write memories.
 - The embedded Postgres listens on `127.0.0.1:5488`.
-- Memories are stored in plaintext. Don't retain secrets.
+- Memories are stored in plaintext. With the Coding Agents plugin, whole session transcripts are sent to the
+  local server when each session ends, so avoid pasting secrets into sessions.
+- The daemons get only a stable `PATH` (no temp or session shim dirs) and your `HINDSIGHT_*` variables.
 - With the `claude-code` provider, the server runs the Claude Agent SDK using your local Claude login.
 - Vulnerabilities in Hindsight itself should be reported upstream to
   [vectorize-io/hindsight](https://github.com/vectorize-io/hindsight/security).
