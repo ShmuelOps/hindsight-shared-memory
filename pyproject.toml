@@ -1,7 +1,7 @@
 [project]
 name = "hindsight-shared-memory"
-version = "0.1.0"
-description = "One local Hindsight memory server shared by all your agents (Claude Code & any MCP client). No API key."
+version = "0.2.0"
+description = "Always-on local Hindsight memory for Claude Code (via the Coding Agents plugin): server + web UI daemons, localhost only, no API key."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -11,7 +11,7 @@ dependencies = [
     "hindsight-api-slim[embedded-db,local-onnx]>=0.10.1,<0.11",
     "flashrank>=0.2",
 ]
-keywords = ["mcp", "hindsight", "claude-code", "agent-memory", "multi-agent", "local"]
+keywords = ["hindsight", "claude-code", "agent-memory", "launchd", "mcp", "local"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: MacOS",

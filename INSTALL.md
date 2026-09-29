@@ -1,167 +1,137 @@
-# Install guide
+# Install guide (macOS)
 
-Five minutes, no API key. Works on macOS and Linux.
+This guide sets up a fresh Mac, in about 10 minutes, so that:
+
+- the **Hindsight memory server** runs in the background all the time (a launchd daemon, started at login),
+- the **Hindsight web UI** runs in the background all the time,
+- **Claude Code** uses it through the official **Hindsight Coding Agents plugin**. Memory is recalled and saved
+  automatically, and one memory is shared per repository across every session and agent.
+
+You don't need an API key. The server uses your Claude Code login (Pro, Max, Team or Enterprise) for fact
+extraction, on Haiku.
 
 ## 1. Prerequisites
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [Claude Code](https://docs.claude.com/en/docs/claude-code), logged in with a Pro/Max plan (`claude` works in your
-  terminal). The server borrows this login to extract facts, so it needs no API key.
+```bash
+# Homebrew (skip if `brew --version` already works)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-## 2. Install
+brew install uv node                  # uv runs the server; Node runs the plugin and the UI
+brew install --cask claude-code       # skip if you already have Claude Code
+claude                                # log in once, then exit (/exit)
+```
+
+## 2. Install the server tool
 
 ```bash
 uv tool install git+https://github.com/ShmuelOps/hindsight-shared-memory
+uv tool update-shell                  # adds ~/.local/bin to your PATH; then open a new terminal
+hindsight-shared-memory --help
 ```
 
-This puts `hindsight-shared-memory` on your PATH (usually `~/.local/bin`).
-
-## 3. Start the server (always on)
+## 3. Run the memory server as a daemon
 
 ```bash
 hindsight-shared-memory install-service
 ```
 
-This registers a login service (launchd on macOS, `systemd --user` on Linux) that starts at login and restarts
-if it crashes.
-
-The first start downloads a small embedding model and a reranker, which takes about a minute. Check it's up:
+The first start downloads two small models (embeddings and reranker), which takes about a minute. Check that
+it's up:
 
 ```bash
-curl http://127.0.0.1:8888/health    # {"status":"healthy",...}
+curl http://127.0.0.1:8888/health     # {"status":"healthy","database":"connected",...}
 ```
 
-<details>
-<summary>Prefer not to install a service?</summary>
+The daemon starts at every login and restarts if it crashes. Its log is
+`~/Library/Logs/hindsight-shared-memory.log`.
 
-Run it in a terminal instead and leave that terminal open:
+## 4. Run the web UI as a daemon
 
 ```bash
-hindsight-shared-memory serve
+hindsight-shared-memory install-ui
+open http://127.0.0.1:9999
 ```
 
-</details>
+The UI (Hindsight's Control Plane) lets you browse banks, memories, entities and knowledge pages, and test
+recall. It's pinned to the same version as the server, is only reachable from your Mac, and also starts at
+login. Its log is `~/Library/Logs/hindsight-ui.log`.
 
-## 4. Connect Claude Code
+## 5. Add the Hindsight plugin to Claude Code
 
 ```bash
-claude mcp add --transport http -s user hindsight http://127.0.0.1:8888/mcp/shared/
-claude mcp list    # hindsight: ... ✔ Connected
+npx -y @vectorize-io/hindsight-coding-agents@0.8.0 install claude-code \
+  --server self-hosted --api-url http://127.0.0.1:8888
+
+# Inject memories by fast retrieval (no LLM call per session) instead of reflect,
+# which is too slow with a subscription-backed local model and times out.
+plutil -replace autoInject -string recall ~/.hindsight/coding-agent.json
 ```
 
-`shared` is the **bank**: every agent that uses the same URL shares one memory. To give a project its own
-memory, point it at a different bank, e.g. `.../mcp/my-project/` with `-s project`.
+The installer adds three hooks to `~/.claude/settings.json`, a `hindsight` MCP server, and a
+`hindsight-coding-agent` skill. It backs up any file it changes as `<file>.hindsight-backup`.
 
-## 5. Tell Claude when to use it
+## 6. Check it works
 
-Add to `~/.claude/CLAUDE.md`:
+Open Claude Code in any git repository:
 
-```markdown
-## Long-term memory (Hindsight MCP, shared by all agents)
-- At the start of a non-trivial task, call `recall` with the task topic.
-- When you learn a durable fact (user preference, project decision, gotcha), `retain` it as one
-  specific, self-contained statement. Hindsight extracts and consolidates facts itself.
-- Use `reflect` for questions that need reasoning across many memories.
-- `invalidate_memory` entries that turn out wrong or stale.
+```bash
+cd ~/some/repo && claude
 ```
 
-Restart Claude Code. You're done.
+- `claude mcp list` shows `hindsight: … ✔ Connected`.
+- The first session in a new repo seeds its memory in the background: git history plus a short read-only survey
+  of the code by Haiku, capped at $2. It shows up in the UI as the bank `coding-agent::<repo>`.
+- Tell Claude a project decision, end the session, then ask about it in a new session: it already knows.
+
+That's it. Every session in that repo, and any other agent that uses the plugin (Codex, Cursor, …), now shares
+this memory.
 
 ---
 
-## Optional: the web UI
+## Optional: one memory for all repositories
 
-Hindsight's **Control Plane** lets you browse banks and memories, explore entities, and test recall queries.
-It needs [Node.js](https://nodejs.org/) (for `npx`).
-
-### Run it once
+By default each repo gets its own bank. To share a single bank across every repo:
 
 ```bash
-npx -y @vectorize-io/hindsight-control-plane@0.10.1 \
-  --port 9999 --hostname 127.0.0.1 --api-url http://127.0.0.1:8888
+plutil -replace bankId -string shared ~/.hindsight/coding-agent.json
 ```
 
-Open <http://127.0.0.1:9999>.
+## What it costs
 
-> Always pass `--hostname 127.0.0.1`. The UI has no login and binds to `0.0.0.0` (your whole network) by
-> default. Keep its version in line with the server's `hindsight-api` version.
+All of it runs on Haiku, on your Claude subscription:
 
-### Keep the UI always on: macOS (launchd)
-
-```bash
-NPX="$(command -v npx)"
-cat > ~/Library/LaunchAgents/io.github.shmuelops.hindsight-ui.plist <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>io.github.shmuelops.hindsight-ui</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$NPX</string><string>-y</string>
-    <string>@vectorize-io/hindsight-control-plane@0.10.1</string>
-    <string>--port</string><string>9999</string>
-    <string>--hostname</string><string>127.0.0.1</string>
-    <string>--api-url</string><string>http://127.0.0.1:8888</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>$PATH</string></dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/hindsight-ui.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/hindsight-ui.log</string>
-</dict>
-</plist>
-EOF
-launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/io.github.shmuelops.hindsight-ui.plist
-```
-
-To remove it:
-
-```bash
-launchctl bootout "gui/$(id -u)/io.github.shmuelops.hindsight-ui"
-rm ~/Library/LaunchAgents/io.github.shmuelops.hindsight-ui.plist
-```
-
-### Keep the UI always on: Linux (systemd --user)
-
-```bash
-mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/hindsight-ui.service <<EOF
-[Unit]
-Description=Hindsight Control Plane UI
-After=hindsight-shared-memory.service
-
-[Service]
-ExecStart=$(command -v npx) -y @vectorize-io/hindsight-control-plane@0.10.1 --port 9999 --hostname 127.0.0.1 --api-url http://127.0.0.1:8888
-Environment="PATH=$PATH"
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-EOF
-systemctl --user daemon-reload && systemctl --user enable --now hindsight-ui
-```
-
-To remove it: `systemctl --user disable --now hindsight-ui && rm ~/.config/systemd/user/hindsight-ui.service`.
-
-To keep both services running after you log out, run `loginctl enable-linger "$USER"`.
-
----
+| When | What runs |
+|------|-----------|
+| First session in a repo, then every 20 commits | Codebase survey: `claude -p --model haiku`, capped at $2 |
+| End of each turn | The server extracts facts from the new part of the session |
+| Start of each session | Nothing: `autoInject: recall` is a plain search |
 
 ## Update
 
 ```bash
 uv tool upgrade hindsight-shared-memory
-hindsight-shared-memory install-service   # reinstalls the service on the new version
+hindsight-shared-memory install-service      # restart the server on the new version
+hindsight-shared-memory install-ui           # re-pin the UI to the new version
+npx -y @vectorize-io/hindsight-coding-agents@latest update
 ```
 
 ## Uninstall
 
 ```bash
+npx -y @vectorize-io/hindsight-coding-agents@0.8.0 uninstall claude-code
+hindsight-shared-memory uninstall-ui
 hindsight-shared-memory uninstall-service
-claude mcp remove hindsight -s user
 uv tool uninstall hindsight-shared-memory
 ```
 
-Memories stay in `~/.pg0/instances/hindsight-shared/`. Delete that folder to wipe them.
+Your memories stay in `~/.pg0/instances/hindsight-shared/`. Delete that folder to wipe them.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| `curl …/health` never answers | `tail -50 ~/Library/Logs/hindsight-shared-memory.log`. The first start needs internet to download the models; after that the daemon starts offline |
+| Stuck on the first start on some networks | Broken IPv6 can stall model downloads. Turn Wi-Fi IPv6 off (System Settings → Wi-Fi → Details → TCP/IP → Configure IPv6: Link-local only), or run `hindsight-shared-memory serve` once on another network |
+| Claude doesn't remember | Plugin log: `~/.hindsight/coding-agents-logs/plugin.log`. Check that `autoInject` is `recall` (step 5) |
+| UI shows no banks | Is the server healthy? Restart the UI with `hindsight-shared-memory install-ui` |
+| Port 8888, 9999 or 5488 already in use | `HINDSIGHT_API_PORT=… hindsight-shared-memory install-service` and/or `HINDSIGHT_UI_PORT=… hindsight-shared-memory install-ui`, then pass the new `--api-url` to the plugin |
