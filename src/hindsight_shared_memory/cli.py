@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 # Every default can be overridden by setting the same variable in the environment.
@@ -195,10 +196,20 @@ def install(name: str, args: list[str]) -> None:
         sys.exit(f"Unsupported OS {system}: run the command in a terminal instead.")
 
 
+def _launchd_loaded(name: str) -> bool:
+    target = f"gui/{os.getuid()}/{label(name)}"
+    return subprocess.run(["launchctl", "print", target], capture_output=True).returncode == 0
+
+
 def uninstall(name: str, quiet: bool = False) -> None:
     system = platform.system()
     if system == "Darwin" and plist_path(name).exists():
         _run("launchctl", "bootout", f"gui/{os.getuid()}/{label(name)}", check=False)
+        # bootout returns before the job is gone; bootstrapping again too soon fails with
+        # "Bootstrap failed: 5: Input/output error" (e.g. re-running install-service to update).
+        deadline = time.monotonic() + 30
+        while _launchd_loaded(name) and time.monotonic() < deadline:
+            time.sleep(0.5)
         plist_path(name).unlink()
     elif system == "Linux" and unit_path(name).exists():
         _run("systemctl", "--user", "disable", "--now", unit_path(name).name, check=False)
