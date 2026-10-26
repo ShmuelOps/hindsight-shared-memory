@@ -80,8 +80,9 @@ your `HINDSIGHT_*` variables into the daemon.
 | `HINDSIGHT_API_MCP_ENABLED_TOOLS` | `retain,recall,reflect,list_memories,invalidate_memory` | Only for the server's own `/mcp` endpoint; the plugin uses the REST API |
 
 The plugin's settings (bank routing, what to inject, survey options) are in `~/.hindsight/coding-agent.json`;
-see the [plugin docs](https://hindsight.vectorize.io/sdks/integrations/coding-agents). This setup changes one of
-them, `autoInject: "recall"`, and the install guide explains why.
+see the [plugin docs](https://hindsight.vectorize.io/sdks/integrations/coding-agents). This setup changes two of
+them, `autoInject: "recall"` and `injectTimeoutMs: 20000`, and the install guide explains why. It also shows
+how to make personal preferences (CLIs, auth methods) apply across every repo.
 
 ## Security
 
