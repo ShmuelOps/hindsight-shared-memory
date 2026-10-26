@@ -59,12 +59,16 @@ login. Its log is `~/Library/Logs/hindsight-ui.log`.
 ## 5. Add the Hindsight plugin to Claude Code
 
 ```bash
-npx -y @vectorize-io/hindsight-coding-agents@0.8.0 install claude-code \
+npx -y @vectorize-io/hindsight-coding-agents@0.8.2 install claude-code \
   --server self-hosted --api-url http://127.0.0.1:8888
 
 # Inject memories by fast retrieval (no LLM call per session) instead of reflect,
 # which is too slow with a subscription-backed local model and times out.
 plutil -replace autoInject -string recall ~/.hindsight/coding-agent.json
+
+# Recall on a local server can take ~15 s; the plugin's 7 s default drops it silently
+# (inject_recall_failed in diag.jsonl). 20 s still fits the 30 s prompt-hook timeout.
+plutil -replace injectTimeoutMs -integer 20000 ~/.hindsight/coding-agent.json
 ```
 
 The installer adds three hooks to `~/.claude/settings.json`, a `hindsight` MCP server, and a
@@ -96,6 +100,20 @@ By default each repo gets its own bank. To share a single bank across every repo
 plutil -replace bankId -string shared ~/.hindsight/coding-agent.json
 ```
 
+## Optional: remember your personal preferences everywhere
+
+Knowledge pages describe the project, so a personal choice ("I use `assume`, not `aws sso login`") has no page to
+land on, and recall runs only on a session's first prompt. These two settings make the agent check memory before
+asking you, and keep one page of your tool and workflow preferences. They work best with the shared bank above:
+
+```bash
+plutil -replace toolGuideExtra -string "Before asking the user which tool, CLI, auth method or workflow to use, or writing commands that depend on that choice, search Hindsight memory: they have likely answered before. Stated user preferences apply across all repos." ~/.hindsight/coding-agent.json
+plutil -replace customPages -json '{"User preferences":{"source_query":"Which tools, CLIs, auth methods and workflows has the user said they use, prefer or refuse (for example AWS auth via assume instead of aws sso login or AWS_PROFILE)? List each preference with the exact command they use."}}' ~/.hindsight/coding-agent.json
+```
+
+To make a preference stick right away, tell Claude "store this in hindsight". It saves a document immediately
+instead of waiting for the end of the session.
+
 ## What it costs
 
 All of it runs on Haiku, on your Claude subscription:
@@ -105,6 +123,7 @@ All of it runs on Haiku, on your Claude subscription:
 | First session in a repo, then every 20 commits | Codebase survey: `claude -p --model haiku`, capped at $2 |
 | End of each turn | The server extracts facts from the new part of the session |
 | Start of each session | Nothing: `autoInject: recall` is a plain search |
+| Hourly, only when new material arrived | One synthesis per knowledge page, including `User preferences` if you added it |
 
 ## Update
 
@@ -118,7 +137,7 @@ npx -y @vectorize-io/hindsight-coding-agents@latest update
 ## Uninstall
 
 ```bash
-npx -y @vectorize-io/hindsight-coding-agents@0.8.0 uninstall claude-code
+npx -y @vectorize-io/hindsight-coding-agents@0.8.2 uninstall claude-code
 hindsight-shared-memory uninstall-ui
 hindsight-shared-memory uninstall-service
 uv tool uninstall hindsight-shared-memory
@@ -133,5 +152,6 @@ Your memories stay in `~/.pg0/instances/hindsight-shared/`. Delete that folder t
 | `curl …/health` never answers | `tail -50 ~/Library/Logs/hindsight-shared-memory.log`. The first start needs internet to download the models; after that the daemon starts offline |
 | Stuck on the first start on some networks | Broken IPv6 can stall model downloads. Turn Wi-Fi IPv6 off (System Settings → Wi-Fi → Details → TCP/IP → Configure IPv6: Link-local only), or run `hindsight-shared-memory serve` once on another network |
 | Claude doesn't remember | Plugin log: `~/.hindsight/coding-agents-logs/plugin.log`. Check that `autoInject` is `recall` (step 5) |
+| Memory exists but is never injected | `grep inject_recall_failed ~/.hindsight/coding-agents-logs/diag.jsonl`. Raise `injectTimeoutMs` (step 5) |
 | UI shows no banks | Is the server healthy? Restart the UI with `hindsight-shared-memory install-ui` |
 | Port 8888, 9999 or 5488 already in use | `HINDSIGHT_API_PORT=… hindsight-shared-memory install-service` and/or `HINDSIGHT_UI_PORT=… hindsight-shared-memory install-ui`, then pass the new `--api-url` to the plugin |
